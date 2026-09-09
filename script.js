@@ -1,152 +1,110 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-const statusText = document.getElementById("statusText");
 
-const GRID_SIZE = 6;
-const CELL_SIZE = canvas.width / GRID_SIZE;
+const GRID_SIZE = 3;
+const TILE_WIDTH = 80;
+const TILE_HEIGHT = 40;
+const ORIGIN_X = canvas.width / 2;
+const ORIGIN_Y = 120;
 
-// Bloklar
-let blocks = [
-  { id: 1, x: 0, y: 2, w: 2, h: 1, color: "#2196F3", isPlayer: true }, // Mavi Fiqur
-  { id: 2, x: 2, y: 0, w: 1, h: 3, color: "#E91E63", isPlayer: false }, // Qırmızı
-  { id: 3, x: 3, y: 2, w: 2, h: 1, color: "#FF9800", isPlayer: false }, // Narıncı
-  { id: 4, x: 0, y: 4, w: 1, h: 2, color: "#9C27B0", isPlayer: false }  // Bənövşəyi
+// Blok tipləri və bucaqları (0: Düz yol, 1: Döngə)
+let grid = [
+  [{ type: 1, rotation: 0 }, { type: 0, rotation: 1 }, { type: 1, rotation: 1 }],
+  [{ type: 0, rotation: 0 }, { type: 1, rotation: 3 }, { type: 0, rotation: 0 }],
+  [{ type: 1, rotation: 2 }, { type: 0, rotation: 1 }, { type: 1, rotation: 0 }]
 ];
 
-const TARGET_EXIT = { x: 5, y: 2 };
-
-let selectedBlock = null;
-let startCellX = 0;
-let startCellY = 0;
-
-function drawGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  ctx.strokeStyle = "#2a2a35";
-  ctx.lineWidth = 2;
-  for (let i = 0; i <= GRID_SIZE; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i * CELL_SIZE, 0);
-    ctx.lineTo(i * CELL_SIZE, canvas.height);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(0, i * CELL_SIZE);
-    ctx.lineTo(canvas.width, i * CELL_SIZE);
-    ctx.stroke();
-  }
-
-  // Çıxış nöqtəsi (Yaşıl)
-  ctx.fillStyle = "#00e676";
-  ctx.fillRect(TARGET_EXIT.x * CELL_SIZE + 4, TARGET_EXIT.y * CELL_SIZE + 4, CELL_SIZE - 8, CELL_SIZE - 8);
+// 2D koordinatı Izometrik (3D) koordinata çevirən funksiya
+function toIso(x, y) {
+  return {
+    isoX: ORIGIN_X + (x - y) * (TILE_WIDTH / 2),
+    isoY: ORIGIN_Y + (x + y) * (TILE_HEIGHT / 2)
+  };
 }
 
-function drawBlocks() {
-  blocks.forEach(b => {
-    ctx.fillStyle = b.color;
-    ctx.beginPath();
-    ctx.rect(
-      b.x * CELL_SIZE + 4, 
-      b.y * CELL_SIZE + 4, 
-      b.w * CELL_SIZE - 8, 
-      b.h * CELL_SIZE - 8
-    );
-    ctx.fill();
-  });
+function drawTile(x, y, tile) {
+  const { isoX, isoY } = toIso(x, y);
+
+  // Kubun Üst Üzü (Lövhə)
+  ctx.beginPath();
+  ctx.moveTo(isoX, isoY);
+  ctx.lineTo(isoX + TILE_WIDTH / 2, isoY + TILE_HEIGHT / 2);
+  ctx.lineTo(isoX, isoY + TILE_HEIGHT);
+  ctx.lineTo(isoX - TILE_WIDTH / 2, isoY + TILE_HEIGHT / 2);
+  ctx.closePath();
+  ctx.fillStyle = "#334155";
+  ctx.fill();
+  ctx.strokeStyle = "#475569";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Kubun Yan Üzləri (3D Həcm Effekti)
+  ctx.beginPath();
+  ctx.moveTo(isoX - TILE_WIDTH / 2, isoY + TILE_HEIGHT / 2);
+  ctx.lineTo(isoX, isoY + TILE_HEIGHT);
+  ctx.lineTo(isoX, isoY + TILE_HEIGHT + 20);
+  ctx.lineTo(isoX - TILE_WIDTH / 2, isoY + TILE_HEIGHT / 2 + 20);
+  ctx.closePath();
+  ctx.fillStyle = "#1e293b";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(isoX, isoY + TILE_HEIGHT);
+  ctx.lineTo(isoX + TILE_WIDTH / 2, isoY + TILE_HEIGHT / 2);
+  ctx.lineTo(isoX + TILE_WIDTH / 2, isoY + TILE_HEIGHT / 2 + 20);
+  ctx.lineTo(isoX, isoY + TILE_HEIGHT + 20);
+  ctx.closePath();
+  ctx.fillStyle = "#0f172a";
+  ctx.fill();
+
+  // Blokun üzərindəki Yolu Çəkmək
+  ctx.save();
+  ctx.translate(isoX, isoY + TILE_HEIGHT / 2);
+  ctx.rotate((tile.rotation * 90 * Math.PI) / 180);
+
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  if (tile.type === 0) {
+    // Düz Yol
+    ctx.moveTo(-TILE_WIDTH / 4, 0);
+    ctx.lineTo(TILE_WIDTH / 4, 0);
+  } else {
+    // Döngə Yol
+    ctx.moveTo(-TILE_WIDTH / 4, 0);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(0, TILE_HEIGHT / 2);
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 function render() {
-  drawGrid();
-  drawBlocks();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      drawTile(c, r, grid[r][c]);
+    }
+  }
 }
 
-// Mobil və Kompyuter üçün vahid Pointer Hadisələri
+// Blokun üzərinə vuranda dönməsi
 canvas.addEventListener("pointerdown", (e) => {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
+  const clickX = e.clientX - rect.left;
+  const clickY = e.clientY - rect.top;
 
-  const clickX = Math.floor(((e.clientX - rect.left) * scaleX) / CELL_SIZE);
-  const clickY = Math.floor(((e.clientY - rect.top) * scaleY) / CELL_SIZE);
-
-  selectedBlock = blocks.find(b => 
-    clickX >= b.x && clickX < b.x + b.w &&
-    clickY >= b.y && clickY < b.y + b.h
-  );
-
-  if (selectedBlock) {
-    startCellX = clickX;
-    startCellY = clickY;
-    canvas.setPointerCapture(e.pointerId);
-  }
-});
-
-canvas.addEventListener("pointermove", (e) => {
-  if (!selectedBlock) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-
-  const currentCellX = Math.floor(((e.clientX - rect.left) * scaleX) / CELL_SIZE);
-  const currentCellY = Math.floor(((e.clientY - rect.top) * scaleY) / CELL_SIZE);
-
-  const dx = currentCellX - startCellX;
-  const dy = currentCellY - startCellY;
-
-  if (dx !== 0 || dy !== 0) {
-    moveBlock(selectedBlock, dx, dy);
-    startCellX = selectedBlock.x;
-    startCellY = selectedBlock.y;
-    render();
-    checkWin();
-  }
-});
-
-function releasePointer(e) {
-  if (selectedBlock) {
-    selectedBlock = null;
-    canvas.releasePointerCapture(e.pointerId);
-  }
-}
-
-canvas.addEventListener("pointerup", releasePointer);
-canvas.addEventListener("pointercancel", releasePointer);
-
-function moveBlock(block, dx, dy) {
-  // Üfüqi fiqurlar yalnız üfüqi, şaquli fiqurlar yalnız şaquli sürüşür
-  if (block.w > block.h && dx !== 0) {
-    const step = Math.sign(dx);
-    const newX = block.x + step;
-    if (newX >= 0 && newX + block.w <= GRID_SIZE && !isColliding(block, newX, block.y)) {
-      block.x = newX;
-    }
-  } else if (block.h > block.w && dy !== 0) {
-    const step = Math.sign(dy);
-    const newY = block.y + step;
-    if (newY >= 0 && newY + block.h <= GRID_SIZE && !isColliding(block, block.x, newY)) {
-      block.y = newY;
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      const { isoX, isoY } = toIso(c, r);
+      const dist = Math.hypot(clickX - isoX, clickY - (isoY + TILE_HEIGHT / 2));
+      if (dist < TILE_WIDTH / 3) {
+        grid[r][c].rotation = (grid[r][c].rotation + 1) % 4;
+        render();
+        return;
+      }
     }
   }
-}
-
-function isColliding(current, nextX, nextY) {
-  return blocks.some(b => {
-    if (b.id === current.id) return false;
-    return (
-      nextX < b.x + b.w &&
-      nextX + current.w > b.x &&
-      nextY < b.y + b.h &&
-      nextY + current.h > b.y
-    );
-  });
-}
-
-function checkWin() {
-  const player = blocks.find(b => b.isPlayer);
-  if (player.x + player.w - 1 === TARGET_EXIT.x && player.y === TARGET_EXIT.y) {
-    statusText.innerText = "Təbriklər! Mərhələni keçdiniz! 🎉";
-  }
-}
+});
 
 render();
